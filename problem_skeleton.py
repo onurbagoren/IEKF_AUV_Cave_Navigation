@@ -4,8 +4,8 @@ from scipy.linalg import  expm, block_diag
 from riekf import Right_IEKF
 from plot_ekf_results import plot_time_series, plot_2d, plot_3d
 from localization_metrics import *
-import os
-import csv
+import matplotlib.pyplot as plt
+import sys
 
 def skew(omega):
     # Assume phi is a 3x1 vector
@@ -114,7 +114,7 @@ def toy_example():
     DVL_cov = 0.1*np.eye(3)
     N = block_diag(DVL_cov, np.eye(2))  # needs to be 5x5 to match
 
-    sys = {
+    system = {
         'f': imu_dynamics,
         'A': A_matrix(),
         'H': H_matrix,
@@ -122,7 +122,7 @@ def toy_example():
         'N': N,
     }
     # print(expm(A_matrix()*0.01))
-    filt = Right_IEKF(sys)
+    filt = Right_IEKF(system)
     filt.prediction(dummy_input, 1)
     print(filt.X)
     filt.correction(dummy_correction, b)
@@ -151,7 +151,7 @@ def run_IEKF_caves():
     X0[:3,4] = initial_pose.p
 
     b = np.array([0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0.24494, -0.002385, -0.38615, 0, 0]).T  # experimental, for stacking dvl and depth measurements
-    sys = {
+    system = {
         'f': imu_dynamics,
         'A': A_matrix(),
         'H': H_stacked,
@@ -165,12 +165,13 @@ def run_IEKF_caves():
     imu_to_dvl = np.array([0, 0.38, 0.07]).T
     d_skew = skew(imu_to_dvl)
 
-    filt = Right_IEKF(sys)
+    filt = Right_IEKF(system)
     # dt is from 0, so just need first timestep
     dt1 = imu_data.time[0,0] * 1e-9
 
     # Need to collect predictions over time and ground truth (gt)
     all_X_pred = []
+    all_X_elem_pred = []
     all_time_pred = []
     all_X_gt = odom_data.z.T 
     all_time_gt = odom_data.time[0, :] * 1e-9
@@ -209,66 +210,108 @@ def run_IEKF_caves():
 
         # Save prediction from this iteration
         all_X_pred.append(filt.X[:3, 4])
+        all_X_elem_pred.append(filt.unskew(filt.X))
         all_time_pred.append(latest_time)
 
     all_X_pred = np.array(all_X_pred)
+    all_X_elem_pred = np.array(all_X_elem_pred)[:,:,0]
     all_time_pred = np.array(all_time_pred)
+
+    np.savetxt(f'{sys.path[0]}/all_X_elem_pred.txt', all_X_elem_pred)
     
     # Compare results to slam solution
-    slam = []
-    with open(os.path.join('comparison_results', 'slam.csv')) as csvf:
-        reader = csv.reader(csvf)
-        for row in reader:
-            slam.append([float(s) for s in row])
-    slam = np.array(slam).T # Note their results are in DVL frame
-    slam_times = np.array(slam)[:, 0]
-    slam = slam[:, 1:]
-    slam[:, 1:] = -slam[:, 1:]
+    # slam = []
+    # with open(os.path.join('comparison_results', 'slam.csv')) as csvf:
+    #     reader = csv.reader(csvf)
+    #     for row in reader:
+    #         slam.append([float(s) for s in row])
+    # slam = np.array(slam).T # Note their results are in DVL frame
+    # slam_times = np.array(slam)[:, 0]
+    # slam = slam[:, 1:]
+    # slam[:, 1:] = -slam[:, 1:]
 
-    all_times = [all_time_pred, all_time_gt, slam_times]
+    # all_times = [all_time_pred, all_time_gt, slam_times]
 
-    # print(all_X_gt[0, :])
+    # # print(all_X_gt[0, :])
 
-    metrics_us = cone_metrics(all_X_pred, all_time_pred)
-    metrics_gt = cone_metrics(all_X_gt[:, :3], all_time_gt)
-    metrics_slam = cone_metrics(slam, slam_times)
+    # metrics_us = cone_metrics(all_X_pred, all_time_pred)
+    # metrics_gt = cone_metrics(all_X_gt[:, :3], all_time_gt)
+    # metrics_slam = cone_metrics(slam, slam_times)
 
-    print('Our Cone Pass Differences:\n')
-    for cone in range(6):
-        print(cone, metrics_us['%s_2pass_2norm' % str(cone)])
+    # print('Our Cone Pass Differences:\n')
+    # for cone in range(6):
+    #     print(cone, metrics_us['%s_2pass_2norm' % str(cone)])
 
-    print('\nVisual-Odometry Cone Pass Differences:\n')
-    for cone in range(6):
-        print(cone, metrics_gt['%s_2pass_2norm' % str(cone)])
+    # print('\nVisual-Odometry Cone Pass Differences:\n')
+    # for cone in range(6):
+    #     print(cone, metrics_gt['%s_2pass_2norm' % str(cone)])
 
-    print('\nSLAM Cone Pass Differences:\n')
-    for cone in range(6):
-        print(cone, metrics_slam['%s_2pass_2norm' % str(cone)])
+    # print('\nSLAM Cone Pass Differences:\n')
+    # for cone in range(6):
+    #     print(cone, metrics_slam['%s_2pass_2norm' % str(cone)])
 
-    print('----')
-    print(metrics_us)
-    print('----')
-    print(metrics_gt)
-    print('----')
-    print(metrics_slam)
+    # print('----')
+    # print(metrics_us)
+    # print('----')
+    # print(metrics_gt)
+    # print('----')
+    # print(metrics_slam)
 
     # Plot 3D position graph to check results
-    plot_3d([all_X_pred[:, 0], all_X_gt[:, 0], slam[:, 0]], 
-            [all_X_pred[:, 1], all_X_gt[:, 1], slam[:, 1]], 
-            [all_X_pred[:, 2], all_X_gt[:, 2], slam[:, 2]],
-            'orientation_x', 'orientation_y', 'orientation_z',
-            ['predicted', 'odometry', 'slam'],
-            'RI-EKF Results',
-            save_dir='../',
-            state_times=all_times)
+    # plot_3d([all_X_pred[:, 0], all_X_gt[:, 0], slam[:, 0]], 
+    #         [all_X_pred[:, 1], all_X_gt[:, 1], slam[:, 1]], 
+    #         [all_X_pred[:, 2], all_X_gt[:, 2], slam[:, 2]],
+    #         'orientation_x', 'orientation_y', 'orientation_z',
+    #         ['predicted', 'odometry', 'slam'],
+    #         'RI-EKF Results',
+    #         save_dir='../',
+    #         state_times=all_times)
 
-    plot_2d([all_X_pred[:, 0], all_X_gt[:, 0], slam[:, 0]], 
-            [all_X_pred[:, 1], all_X_gt[:, 1], slam[:, 1]],
-            'orientation_x', 'orientation_y', 
-            ['predicted', 'ground truth', 'slam'],
-            'RI-EKF Results',
-            save_dir='../',
-            state_times=all_times)
+    # plot_2d([all_X_pred[:, 0], all_X_gt[:, 0], slam[:, 0]], 
+    #         [all_X_pred[:, 1], all_X_gt[:, 1], slam[:, 1]],
+    #         'orientation_x', 'orientation_y', 
+    #         ['predicted', 'ground truth', 'slam'],
+    #         'RI-EKF Results',
+    #         save_dir='../',
+    #         state_times=all_times)
+
+
+def plot_states(vec):
+    '''
+    :param vec N X 9 numpy array
+    '''
+
+    tx = vec[:, 0] # assuming that this is the orientation (theta == t)
+    ty = vec[:, 1]
+    tz = vec[:, 2]
+    vx = vec[:, 3]
+    vy = vec[:, 4]
+    vz = vec[:, 5]
+    x = vec[:, 6]
+    y = vec[:, 7]
+    z = vec[:, 8]
+
+    fig, ax = plt.subplots(3, 3, figsize=(15, 15))
+    ax[0, 0].plot(tx, '.')
+    ax[0, 0].set_title('tx')
+    ax[0, 1].plot(ty, '.')
+    ax[0, 1].set_title('ty')
+    ax[0, 2].plot(tz, '.')
+    ax[0, 2].set_title('tz')
+    ax[1, 0].plot(vx, '.')
+    ax[1, 0].set_title('vx')
+    ax[1, 1].plot(vy, '.')
+    ax[1, 1].set_title('vy')
+    ax[1, 2].plot(vz, '.')
+    ax[1, 2].set_title('vz')
+    ax[2, 0].plot(x, '.')
+    ax[2, 0].set_title('x')
+    ax[2, 1].plot(y, '.')
+    ax[2, 1].set_title('y')
+    ax[2, 2].plot(z, '.')
+    ax[2, 2].set_title('z')
+    plt.show()
+
 
 
 if __name__ == "__main__":

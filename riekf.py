@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 from scipy.linalg import expm, block_diag
 
@@ -52,7 +53,7 @@ class Right_IEKF:
         :return: R in skew form (NOT R_transpose)
         """
         # vector to skew R^9 -> se(3)+vel
-        # x = [ tx, ty, tz, vx, vy, vz, x, y, z]
+        # x = [tx, ty, tz, vx, vy, vz, x, y, z]
         
         matrix = np.array([[0, -x[2], x[1], x[3], x[6]],
                            [x[2], 0, -x[0], x[4], x[7]],
@@ -60,6 +61,25 @@ class Right_IEKF:
                            [0,0,0,0,0],
                            [0,0,0,0,0]], dtype=float)
         return matrix
+
+    
+    def unskew(self, X):
+        '''
+        :param x: Lie algebra vector
+        :return: x in R^9
+        '''
+        tx = X[2,1]
+        ty = X[0,2]
+        tz = X[1,0]
+        vx = X[0,3]
+        vy = X[1,3]
+        vz = X[2,3]
+        x = X[0,4]
+        y = X[1,4]
+        z = X[2,4]
+
+        res = np.array([[tx, ty, tz, vx, vy, vz, x, y, z]]).T
+        return res
 
 
     def prediction(self, u, dt, b_g=0):
@@ -99,6 +119,8 @@ class Right_IEKF:
         # skew define here to move to lie algebra 
 
         self.X = np.dot(expm(delta), self.X)
+        print(self.X.shape)
+        sys.exit()
 
         # Update Covariance
         I = np.eye(np.shape(self.P)[0])
