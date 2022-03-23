@@ -218,6 +218,8 @@ def run_IEKF_caves():
     all_time_pred = np.array(all_time_pred)
 
     np.savetxt(f'{sys.path[0]}/all_X_elem_pred.txt', all_X_elem_pred)
+    np.savetxt(f'{sys.path[0]}/all_X_pred.txt', all_X_pred)
+    np.savetxt(f'{sys.path[0]}/all_time_pred.txt', all_time_pred)
     
     # Compare results to slam solution
     # slam = []
